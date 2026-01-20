@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.AmazonConnectChat" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="colorPrimary">#FF9900</item>
+        <item name="colorPrimaryVariant">#232F3E</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#37475A</item>
+        <item name="android:statusBarColor">#232F3E</item>
+    </style>
+</resources>

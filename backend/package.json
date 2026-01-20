@@ -1,0 +1,25 @@
+{
+  "name": "ai-virtual-agent-backend",
+  "version": "1.0.0",
+  "description": "Serverless backend for AI Virtual Agent with Claude/OpenAI streaming",
+  "main": "src/stream.js",
+  "scripts": {
+    "test": "jest",
+    "lint": "eslint src/",
+    "deploy:dev": "./deploy.sh dev",
+    "deploy:staging": "./deploy.sh staging",
+    "deploy:prod": "./deploy.sh prod"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "@aws-sdk/client-secrets-manager": "^3.490.0",
+    "openai": "^4.77.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "eslint": "^8.56.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

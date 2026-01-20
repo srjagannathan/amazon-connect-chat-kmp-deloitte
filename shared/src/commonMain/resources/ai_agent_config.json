@@ -1,0 +1,37 @@
+{
+  "providers": {
+    "primary": "claude",
+    "fallback": "openai",
+    "models": {
+      "claude": "claude-sonnet-4-20250514",
+      "openai": "gpt-4-turbo-preview"
+    }
+  },
+  "streaming": {
+    "enabled": true,
+    "chunkBufferMs": 50
+  },
+  "escalation": {
+    "confirmWithUser": true,
+    "keywords": [
+      "human",
+      "agent",
+      "representative",
+      "manager",
+      "supervisor",
+      "real person",
+      "speak to someone",
+      "talk to a person",
+      "live agent",
+      "customer service"
+    ],
+    "confidenceThreshold": 0.6,
+    "sentimentThreshold": -0.5,
+    "maxRetryAttempts": 3
+  },
+  "quickReplies": {
+    "enabled": true,
+    "maxCount": 3
+  },
+  "systemPrompt": "You are a helpful customer service assistant. Be friendly, concise, and professional. If you cannot help with something or the customer requests a human agent, recommend escalation."
+}

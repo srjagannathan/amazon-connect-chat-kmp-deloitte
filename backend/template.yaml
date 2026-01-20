@@ -1,0 +1,288 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: AI Virtual Agent Backend - Streaming Proxy for Amazon Connect Chat KMP
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Deployment environment
+
+  # Future integration parameters (inactive initially)
+  ExistingVpcId:
+    Type: String
+    Default: ""
+    Description: Optional VPC ID for future integration with existing infrastructure
+
+  ExistingSubnetIds:
+    Type: CommaDelimitedList
+    Default: ""
+    Description: Optional subnet IDs for VPC integration
+
+Globals:
+  Function:
+    Timeout: 120
+    Runtime: nodejs20.x
+    MemorySize: 512
+    Environment:
+      Variables:
+        ENVIRONMENT: !Ref Environment
+        SECRETS_ARN: !Ref AIProviderSecrets
+    Tags:
+      Project: amazon-connect-chat-kmp
+      Component: ai-virtual-agent
+
+Resources:
+  # ============================================
+  # SECRETS MANAGEMENT
+  # ============================================
+  AIProviderSecrets:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${Environment}/ai-virtual-agent/api-keys"
+      Description: API keys for Claude and OpenAI providers
+      SecretString: |
+        {
+          "ANTHROPIC_API_KEY": "placeholder-replace-after-deploy",
+          "OPENAI_API_KEY": "placeholder-replace-after-deploy"
+        }
+      Tags:
+        - Key: Project
+          Value: amazon-connect-chat-kmp
+
+  # ============================================
+  # LAMBDA FUNCTIONS
+  # ============================================
+
+  # Main streaming chat function with response streaming
+  AIStreamingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${Environment}-ai-agent-stream"
+      CodeUri: src/
+      Handler: stream.handler
+      Description: Streaming AI chat with Claude primary and OpenAI fallback
+      Timeout: 120
+      MemorySize: 1024
+      FunctionUrlConfig:
+        AuthType: NONE
+        InvokeMode: RESPONSE_STREAM
+        Cors:
+          AllowOrigins:
+            - "*"
+          AllowMethods:
+            - POST
+            - OPTIONS
+          AllowHeaders:
+            - Content-Type
+            - X-Provider
+            - X-Session-Id
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref AIProviderSecrets
+
+  # Health check function
+  HealthCheckFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${Environment}-ai-agent-health"
+      CodeUri: src/
+      Handler: health.handler
+      Description: Health check endpoint for AI providers
+      Timeout: 30
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowOrigins:
+            - "*"
+          AllowMethods:
+            - GET
+            - OPTIONS
+          AllowHeaders:
+            - X-Provider
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref AIProviderSecrets
+
+  # Summary generation function
+  SummaryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${Environment}-ai-agent-summary"
+      CodeUri: src/
+      Handler: summary.handler
+      Description: Generate conversation summaries for agent handover
+      Timeout: 60
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowOrigins:
+            - "*"
+          AllowMethods:
+            - POST
+            - OPTIONS
+          AllowHeaders:
+            - Content-Type
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref AIProviderSecrets
+
+  # Sentiment analysis function
+  SentimentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${Environment}-ai-agent-sentiment"
+      CodeUri: src/
+      Handler: sentiment.handler
+      Description: Analyze customer sentiment from conversation
+      Timeout: 30
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowOrigins:
+            - "*"
+          AllowMethods:
+            - POST
+            - OPTIONS
+          AllowHeaders:
+            - Content-Type
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref AIProviderSecrets
+
+  # ============================================
+  # MONITORING & LOGGING
+  # ============================================
+
+  AIAgentLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${Environment}-ai-agent"
+      RetentionInDays: 30
+
+  # CloudWatch Dashboard for monitoring
+  AIAgentDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub "${Environment}-ai-virtual-agent"
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/Lambda", "Invocations", "FunctionName", "${Environment}-ai-agent-stream"],
+                  [".", "Errors", ".", "."],
+                  [".", "Duration", ".", "."]
+                ],
+                "title": "Streaming Function Metrics",
+                "region": "${AWS::Region}"
+              }
+            }
+          ]
+        }
+
+  # ============================================
+  # FUTURE INTEGRATION RESOURCES
+  # ============================================
+
+  # EventBridge for analytics pipeline integration (inactive initially)
+  AIAgentEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub "${Environment}-ai-agent-events"
+
+  # Rule to capture conversation events (disabled, enable when analytics ready)
+  ConversationEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "${Environment}-ai-conversation-events"
+      EventBusName: !Ref AIAgentEventBus
+      EventPattern:
+        source:
+          - ai-virtual-agent
+        detail-type:
+          - ConversationCompleted
+          - EscalationTriggered
+          - ProviderFallback
+      State: DISABLED
+      Targets: []
+
+  # ============================================
+  # ALARMS
+  # ============================================
+
+  HighErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${Environment}-ai-agent-high-error-rate"
+      AlarmDescription: Alert when AI agent error rate exceeds threshold
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Sub "${Environment}-ai-agent-stream"
+
+Outputs:
+  StreamingEndpoint:
+    Description: Streaming chat endpoint URL
+    Value: !GetAtt AIStreamingFunctionUrl.FunctionUrl
+    Export:
+      Name: !Sub "${Environment}-ai-stream-url"
+
+  HealthEndpoint:
+    Description: Health check endpoint URL
+    Value: !GetAtt HealthCheckFunctionUrl.FunctionUrl
+    Export:
+      Name: !Sub "${Environment}-ai-health-url"
+
+  SummaryEndpoint:
+    Description: Summary generation endpoint URL
+    Value: !GetAtt SummaryFunctionUrl.FunctionUrl
+    Export:
+      Name: !Sub "${Environment}-ai-summary-url"
+
+  SentimentEndpoint:
+    Description: Sentiment analysis endpoint URL
+    Value: !GetAtt SentimentFunctionUrl.FunctionUrl
+    Export:
+      Name: !Sub "${Environment}-ai-sentiment-url"
+
+  EventBusArn:
+    Description: EventBridge bus ARN for future analytics integration
+    Value: !GetAtt AIAgentEventBus.Arn
+    Export:
+      Name: !Sub "${Environment}-ai-agent-eventbus"
+
+  SecretsArn:
+    Description: Secrets Manager ARN for API keys
+    Value: !Ref AIProviderSecrets
+    Export:
+      Name: !Sub "${Environment}-ai-agent-secrets"
